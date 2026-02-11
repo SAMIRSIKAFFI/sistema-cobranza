@@ -11,25 +11,36 @@ st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
 archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
 
+def limpiar_columnas(df):
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.upper()
+        .str.replace(" ", "_")
+    )
+    return df
+
 if archivo_deuda and archivo_pagos:
 
     df_deuda = pd.read_excel(archivo_deuda)
     df_pagos = pd.read_excel(archivo_pagos)
 
+    df_deuda = limpiar_columnas(df_deuda)
+    df_pagos = limpiar_columnas(df_pagos)
+
+    # Asegurar nombres correctos
     df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
     df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
 
-    df_pagos["Id Cobranza"] = df_pagos["Id Cobranza"].astype(str)
-    df_pagos["Periodo"] = df_pagos["Periodo"].astype(str)
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
 
     pagos_resumen = df_pagos.groupby(
-        ["Id Cobranza", "Periodo"]
-    )["Importe"].sum().reset_index()
+        ["ID_COBRANZA", "PERIODO"]
+    )["IMPORTE"].sum().reset_index()
 
     pagos_resumen.rename(columns={
-        "Id Cobranza": "ID_COBRANZA",
-        "Periodo": "PERIODO",
-        "Importe": "TOTAL_PAGADO"
+        "IMPORTE": "TOTAL_PAGADO"
     }, inplace=True)
 
     resultado = df_deuda.merge(
@@ -94,7 +105,6 @@ if archivo_deuda and archivo_pagos:
         workbook = writer.book
 
         for sheet in workbook.worksheets:
-
             for col in sheet.columns:
                 max_length = 0
                 col_letter = get_column_letter(col[0].column)
@@ -119,3 +129,4 @@ if archivo_deuda and archivo_pagos:
         file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
