@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import io
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="Sistema Profesional de Cobranza", layout="wide")
 
@@ -8,9 +10,6 @@ st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 
 archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
 archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
-
-def formato_bs(valor):
-    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 if archivo_deuda and archivo_pagos:
 
@@ -58,12 +57,8 @@ if archivo_deuda and archivo_pagos:
     st.success("Cruce realizado correctamente")
 
     col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric("💰 Total Pagado", f"Bs. {formato_bs(total_pagado)}")
-
-    with col2:
-        st.metric("⚠️ Total Pendiente", f"Bs. {formato_bs(total_pendiente)}")
+    col1.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
+    col2.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
 
     st.subheader("📊 Resumen por TIPO")
     st.dataframe(resumen_tipo)
@@ -74,24 +69,17 @@ if archivo_deuda and archivo_pagos:
     st.subheader("💵 Pagos por PERIODO")
     st.dataframe(pagos_por_periodo)
 
-    # Gráficos profesionales
     st.subheader("📊 Comparativo Pagado vs Pendiente")
-    grafico_comparativo = pd.DataFrame({
+    comparativo = pd.DataFrame({
         "Pagado": [total_pagado],
         "Pendiente": [total_pendiente]
     })
-    st.bar_chart(grafico_comparativo)
+    st.bar_chart(comparativo)
 
-    st.subheader("📈 Deuda por TIPO")
-    st.bar_chart(resumen_tipo.set_index("TIPO"))
-
-    st.subheader("📈 Deuda por PERIODO")
-    st.line_chart(resumen_periodo.set_index("PERIODO"))
-
-    # Exportar Excel profesional
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
+
         resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
         resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
         resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
@@ -103,9 +91,31 @@ if archivo_deuda and archivo_pagos:
             nombre_hoja = f"PEND_{periodo}"
             df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
 
+        workbook = writer.book
+
+        for sheet in workbook.worksheets:
+
+            for col in sheet.columns:
+                max_length = 0
+                col_letter = get_column_letter(col[0].column)
+
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+
+                sheet.column_dimensions[col_letter].width = max_length + 2
+
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
+
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, (int, float)):
+                        cell.number_format = '#,##0.00'
+
     st.download_button(
-        label="📥 Descargar Reporte Profesional",
+        label="📥 Descargar Reporte Financiero Profesional",
         data=output.getvalue(),
-        file_name="reporte_cobranza_profesional.xlsx",
+        file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
