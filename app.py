@@ -118,15 +118,21 @@ if archivo_deuda and archivo_pagos:
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
 
-            for row in sheet.iter_rows():
-                for cell in row:
-                    if isinstance(cell.value, (int, float)):
-                        cell.number_format = '#,##0.00'
+            # Aplicar formato solo a columnas monetarias
+columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
 
+for col in sheet.columns:
+    header = col[0].value
+    if header in columnas_monetarias:
+        for cell in col[1:]:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
+                
     st.download_button(
         label="📥 Descargar Reporte Financiero Profesional",
         data=output.getvalue(),
         file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 
