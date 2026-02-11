@@ -104,29 +104,32 @@ if archivo_deuda and archivo_pagos:
 
         workbook = writer.book
 
-        for sheet in workbook.worksheets:
-            for col in sheet.columns:
-                max_length = 0
-                col_letter = get_column_letter(col[0].column)
+for sheet in workbook.worksheets:
 
-                for cell in col:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
+    # Ajustar ancho columnas
+    for col in sheet.columns:
+        max_length = 0
+        col_letter = get_column_letter(col[0].column)
 
-                sheet.column_dimensions[col_letter].width = max_length + 2
+        for cell in col:
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
 
-            for cell in sheet[1]:
-                cell.font = Font(bold=True)
+        sheet.column_dimensions[col_letter].width = max_length + 2
 
-            # Aplicar formato solo a columnas monetarias
-columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
+    # Encabezados en negrita
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
 
-for col in sheet.columns:
-    header = col[0].value
-    if header in columnas_monetarias:
-        for cell in col[1:]:
-            if isinstance(cell.value, (int, float)):
-                cell.number_format = '#,##0.00'
+    # Aplicar formato SOLO a columnas monetarias
+    columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
+
+    for col in sheet.columns:
+        header = col[0].value
+        if header in columnas_monetarias:
+            for cell in col[1:]:
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0.00'
                 
     st.download_button(
         label="📥 Descargar Reporte Financiero Profesional",
@@ -134,5 +137,6 @@ for col in sheet.columns:
         file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
 
 
