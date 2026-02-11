@@ -11,14 +11,11 @@ st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
 archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
 
+
 def limpiar_columnas(df):
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.upper()
-        .str.replace(" ", "_")
-    )
+    df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
     return df
+
 
 if archivo_deuda and archivo_pagos:
 
@@ -28,7 +25,6 @@ if archivo_deuda and archivo_pagos:
     df_deuda = limpiar_columnas(df_deuda)
     df_pagos = limpiar_columnas(df_pagos)
 
-    # Asegurar nombres correctos
     df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
     df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
 
@@ -39,9 +35,7 @@ if archivo_deuda and archivo_pagos:
         ["ID_COBRANZA", "PERIODO"]
     )["IMPORTE"].sum().reset_index()
 
-    pagos_resumen.rename(columns={
-        "IMPORTE": "TOTAL_PAGADO"
-    }, inplace=True)
+    pagos_resumen.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
 
     resultado = df_deuda.merge(
         pagos_resumen,
@@ -87,57 +81,54 @@ if archivo_deuda and archivo_pagos:
     })
     st.bar_chart(comparativo)
 
+    # ---------- EXPORTACIÓN EXCEL PROFESIONAL ----------
     output = io.BytesIO()
 
-with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
 
-    resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
-    resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
-    resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
-    pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
-    pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
+        resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
+        resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
+        resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
+        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
+        pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
 
-    for periodo in pendientes["PERIODO"].unique():
-        df_periodo = pendientes[pendientes["PERIODO"] == periodo]
-        nombre_hoja = f"PEND_{periodo}"
-        df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
+        for periodo in pendientes["PERIODO"].unique():
+            df_periodo = pendientes[pendientes["PERIODO"] == periodo]
+            nombre_hoja = f"PEND_{periodo}"
+            df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
 
-    workbook = writer.book
+        workbook = writer.book
 
-    for sheet in workbook.worksheets:
+        for sheet in workbook.worksheets:
 
-        # Ajustar ancho columnas
-        for col in sheet.columns:
-            max_length = 0
-            col_letter = get_column_letter(col[0].column)
+            # Ajustar ancho columnas
+            for col in sheet.columns:
+                max_length = 0
+                col_letter = get_column_letter(col[0].column)
 
-            for cell in col:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
 
-            sheet.column_dimensions[col_letter].width = max_length + 2
+                sheet.column_dimensions[col_letter].width = max_length + 2
 
-        # Encabezados en negrita
-        for cell in sheet[1]:
-            cell.font = Font(bold=True)
+            # Encabezados en negrita
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
 
-        # Formato solo columnas monetarias
-        columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
+            # Formato monetario SOLO columnas correctas
+            columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
 
-        for col in sheet.columns:
-            header = col[0].value
-            if header in columnas_monetarias:
-                for cell in col[1:]:
-                    if isinstance(cell.value, (int, float)):
-                        cell.number_format = '#,##0.00'
-                
+            for col in sheet.columns:
+                header = col[0].value
+                if header in columnas_monetarias:
+                    for cell in col[1:]:
+                        if isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
+
     st.download_button(
         label="📥 Descargar Reporte Financiero Profesional",
         data=output.getvalue(),
         file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
-
-
