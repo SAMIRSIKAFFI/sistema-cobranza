@@ -2,12 +2,15 @@ import streamlit as st
 import pandas as pd
 import io
 
-st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
+st.set_page_config(page_title="Sistema Profesional de Cobranza", layout="wide")
 
-st.write("Suba los archivos para cruzar cartera con pagos")
+st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 
 archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
 archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
+
+def formato_bs(valor):
+    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 if archivo_deuda and archivo_pagos:
 
@@ -45,21 +48,22 @@ if archivo_deuda and archivo_pagos:
 
     pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
-    # 📊 Resumen por TIPO
     resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
-
-    # 📊 Totales por PERIODO
     resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
+    pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
 
     total_pendiente = pendientes["DEUDA"].sum()
+    total_pagado = resultado["TOTAL_PAGADO"].sum()
 
     st.success("Cruce realizado correctamente")
 
-    st.subheader("📊 Resumen General")
-    st.dataframe(resultado)
+    col1, col2 = st.columns(2)
 
-    st.subheader("📌 Pendientes")
-    st.dataframe(pendientes)
+    with col1:
+        st.metric("💰 Total Pagado", f"Bs. {formato_bs(total_pagado)}")
+
+    with col2:
+        st.metric("⚠️ Total Pendiente", f"Bs. {formato_bs(total_pendiente)}")
 
     st.subheader("📊 Resumen por TIPO")
     st.dataframe(resumen_tipo)
@@ -67,27 +71,33 @@ if archivo_deuda and archivo_pagos:
     st.subheader("📆 Deuda Pendiente por PERIODO")
     st.dataframe(resumen_periodo)
 
-    st.subheader("💰 Total Deuda Pendiente")
-    st.write(f"### Bs. {total_pendiente:,.2f}")
+    st.subheader("💵 Pagos por PERIODO")
+    st.dataframe(pagos_por_periodo)
 
-    # 📈 Gráfico por TIPO
-    st.subheader("📊 Gráfico Deuda por TIPO")
+    # Gráficos profesionales
+    st.subheader("📊 Comparativo Pagado vs Pendiente")
+    grafico_comparativo = pd.DataFrame({
+        "Pagado": [total_pagado],
+        "Pendiente": [total_pendiente]
+    })
+    st.bar_chart(grafico_comparativo)
+
+    st.subheader("📈 Deuda por TIPO")
     st.bar_chart(resumen_tipo.set_index("TIPO"))
 
-    # 📈 Gráfico por PERIODO
-    st.subheader("📊 Gráfico Deuda por PERIODO")
-    st.bar_chart(resumen_periodo.set_index("PERIODO"))
+    st.subheader("📈 Deuda por PERIODO")
+    st.line_chart(resumen_periodo.set_index("PERIODO"))
 
-    # 📥 Exportar Excel con hojas múltiples
+    # Exportar Excel profesional
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
         resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
         resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
+        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
         pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
 
-        # Crear hojas por PERIODO (solo pendientes)
         for periodo in pendientes["PERIODO"].unique():
             df_periodo = pendientes[pendientes["PERIODO"] == periodo]
             nombre_hoja = f"PEND_{periodo}"
@@ -99,5 +109,3 @@ if archivo_deuda and archivo_pagos:
         file_name="reporte_cobranza_profesional.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
