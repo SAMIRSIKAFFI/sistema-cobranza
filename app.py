@@ -12,8 +12,15 @@ st.title("⚖️ Sistema Profesional de Cobranza")
 # ---------------------------------------------------
 
 def limpiar_columnas(df):
-    df.columns = df.columns.str.strip().str.upper()
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.upper()
+        .str.replace(" ", "_")
+        .str.replace("-", "_")
+    )
     return df
+
 
 # ---------------------------------------------------
 # CARGA ARCHIVOS PRINCIPALES
@@ -208,4 +215,5 @@ if archivo_suscriptor and archivo_pagos:
                         file_name=f"SMS_{i+1}.csv",
                         mime="text/csv"
                     )
+
 
