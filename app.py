@@ -1,176 +1,134 @@
 import streamlit as st
 import pandas as pd
+import io
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
-st.set_page_config(page_title="Sistema Integral de Cobranza", layout="wide")
+st.set_page_config(page_title="Sistema Profesional de Cobranza", layout="wide")
 
-st.title("⚖️ Sistema Profesional de Cobranza")
+st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 
-# ===================================================
-# FUNCION LIMPIAR COLUMNAS
-# ===================================================
+archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
+archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
+
 
 def limpiar_columnas(df):
-    df.columns = (
-        df.columns
-        .str.strip()
-        .str.upper()
-        .str.replace(" ", "_", regex=False)
-        .str.replace("-", "_", regex=False)
-    )
+    df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
     return df
 
 
-# ===================================================
-# MODULO 1 - DASHBOARD DEUDA VS PAGOS (INDEPENDIENTE)
-# ===================================================
+if archivo_deuda and archivo_pagos:
 
-st.header("📊 Módulo 1 - Dashboard Ejecutivo")
+    df_deuda = pd.read_excel(archivo_deuda)
+    df_pagos = pd.read_excel(archivo_pagos)
 
-archivo_deuda = st.file_uploader("Subir Archivo DEUDA", type=["xlsx"], key="deuda")
-archivo_pagos = st.file_uploader("Subir Archivo PAGOS", type=["xlsx"], key="pagos")
+    df_deuda = limpiar_columnas(df_deuda)
+    df_pagos = limpiar_columnas(df_pagos)
 
-if archivo_deuda is not None and archivo_pagos is not None:
+    df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
+    df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
 
-    df_deuda = limpiar_columnas(pd.read_excel(archivo_deuda))
-    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
 
-    if not all(col in df_deuda.columns for col in ["ID_COBRANZA", "DEUDA", "TIPO"]):
-        st.error("Archivo DEUDA debe contener: ID_COBRANZA, DEUDA, TIPO")
-    elif not all(col in df_pagos.columns for col in ["ID_COBRANZA", "IMPORTE"]):
-        st.error("Archivo PAGOS debe contener: ID_COBRANZA, IMPORTE")
-    else:
+    pagos_resumen = df_pagos.groupby(
+        ["ID_COBRANZA", "PERIODO"]
+    )["IMPORTE"].sum().reset_index()
 
-        df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
-        df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    pagos_resumen.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
 
-        df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
-        df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+    resultado = df_deuda.merge(
+        pagos_resumen,
+        on=["ID_COBRANZA", "PERIODO"],
+        how="left"
+    )
 
-        pagos_resumen = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
+    resultado["TOTAL_PAGADO"] = resultado["TOTAL_PAGADO"].fillna(0)
 
-        df = df_deuda.merge(pagos_resumen, on="ID_COBRANZA", how="left")
-        df["IMPORTE"] = df["IMPORTE"].fillna(0)
-        df["PENDIENTE"] = df["DEUDA"] - df["IMPORTE"]
+    resultado["ESTADO"] = resultado.apply(
+        lambda row: "PAGADO" if row["TOTAL_PAGADO"] >= row["DEUDA"] else "PENDIENTE",
+        axis=1
+    )
 
-        col1, col2, col3 = st.columns(3)
+    pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
-        col1.metric("Total Deuda", f"{df['DEUDA'].sum():,.2f}")
-        col2.metric("Total Pagado", f"{df['IMPORTE'].sum():,.2f}")
-        col3.metric("Total Pendiente", f"{df['PENDIENTE'].sum():,.2f}")
+    resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
+    resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
+    pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
 
-        st.bar_chart(df.groupby("TIPO")["PENDIENTE"].sum())
+    total_pendiente = pendientes["DEUDA"].sum()
+    total_pagado = resultado["TOTAL_PAGADO"].sum()
 
+    st.success("Cruce realizado correctamente")
 
-# ===================================================
-# MODULO 2 - GENERADOR MASIVO SMS (INDEPENDIENTE)
-# ===================================================
+    col1, col2 = st.columns(2)
+    col1.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
+    col2.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
 
-st.markdown("---")
-st.header("📲 Módulo 2 - Generador Masivo SMS")
+    st.subheader("📊 Resumen por TIPO")
+    st.dataframe(resumen_tipo)
 
-archivo_suscriptor = st.file_uploader(
-    "Subir Base Suscriptor (SMS)",
-    type=["xlsx"],
-    key="suscriptor"
-)
+    st.subheader("📆 Deuda Pendiente por PERIODO")
+    st.dataframe(resumen_periodo)
 
-archivo_pagos_sms = st.file_uploader(
-    "Subir Archivo PAGOS (opcional para depuración)",
-    type=["xlsx"],
-    key="pagos_sms"
-)
+    st.subheader("💵 Pagos por PERIODO")
+    st.dataframe(pagos_por_periodo)
 
-if archivo_suscriptor is not None:
+    st.subheader("📊 Comparativo Pagado vs Pendiente")
+    comparativo = pd.DataFrame({
+        "Pagado": [total_pagado],
+        "Pendiente": [total_pendiente]
+    })
+    st.bar_chart(comparativo)
 
-    df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
+    # ---------- EXPORTACIÓN EXCEL PROFESIONAL ----------
+    output = io.BytesIO()
 
-    columnas_sms = ["CODIGO", "TIPO", "NUMERO", "NOMBRE", "FECHA", "MONTO"]
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
 
-    if not all(col in df_suscriptor.columns for col in columnas_sms):
-        st.error("La Base Suscriptor debe contener: CODIGO, TIPO, NUMERO, NOMBRE, FECHA, MONTO")
-    else:
+        resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
+        resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
+        resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
+        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
+        pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
 
-        # Conversión segura de FECHA
-        df_suscriptor["FECHA"] = pd.to_datetime(
-            df_suscriptor["FECHA"],
-            errors="coerce",
-            dayfirst=True
-        )
+        for periodo in pendientes["PERIODO"].unique():
+            df_periodo = pendientes[pendientes["PERIODO"] == periodo]
+            nombre_hoja = f"PEND_{periodo}"
+            df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
 
-        # Si no se pudo convertir fecha, mostrar advertencia
-        if df_suscriptor["FECHA"].isna().all():
-            st.warning("No se pudieron interpretar las fechas. Se usará el valor original como período.")
-            df_suscriptor["PERIODO"] = df_suscriptor["FECHA"].astype(str)
-        else:
-            df_suscriptor["PERIODO"] = df_suscriptor["FECHA"].dt.strftime("%Y-%m")
+        workbook = writer.book
 
-        df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
-        df_suscriptor["TIPO"] = df_suscriptor["TIPO"].astype(str)
+        for sheet in workbook.worksheets:
 
-        # Filtros dinámicos
-        periodos = sorted(df_suscriptor["PERIODO"].dropna().unique())
-        tipos = sorted(df_suscriptor["TIPO"].dropna().unique())
+            # Ajustar ancho columnas
+            for col in sheet.columns:
+                max_length = 0
+                col_letter = get_column_letter(col[0].column)
 
-        periodos_sel = st.multiselect("Seleccionar PERÍODOS", periodos)
-        tipos_sel = st.multiselect("Seleccionar TIPO", tipos, default=tipos)
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
 
-        cantidad_archivos = st.number_input("Cantidad de archivos CSV", 1, 50, 10)
-        depurar = st.checkbox("Depurar pagos automáticamente")
+                sheet.column_dimensions[col_letter].width = max_length + 2
 
-        if st.button("Generar Archivos SMS"):
+            # Encabezados en negrita
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
 
-            df_filtrado = df_suscriptor.copy()
+            # Formato monetario SOLO columnas correctas
+            columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
 
-            if periodos_sel:
-                df_filtrado = df_filtrado[df_filtrado["PERIODO"].isin(periodos_sel)]
+            for col in sheet.columns:
+                header = col[0].value
+                if header in columnas_monetarias:
+                    for cell in col[1:]:
+                        if isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
 
-            if tipos_sel:
-                df_filtrado = df_filtrado[df_filtrado["TIPO"].isin(tipos_sel)]
-
-            # Depuración opcional
-            if depurar and archivo_pagos_sms is not None:
-
-                df_pagos_sms = limpiar_columnas(pd.read_excel(archivo_pagos_sms))
-
-                if all(col in df_pagos_sms.columns for col in ["ID_COBRANZA", "IMPORTE"]):
-
-                    df_pagos_sms["ID_COBRANZA"] = df_pagos_sms["ID_COBRANZA"].astype(str)
-                    df_pagos_sms["IMPORTE"] = pd.to_numeric(
-                        df_pagos_sms["IMPORTE"], errors="coerce"
-                    ).fillna(0)
-
-                    codigos_pagados = df_pagos_sms[
-                        df_pagos_sms["IMPORTE"] > 0
-                    ]["ID_COBRANZA"].unique()
-
-                    df_filtrado = df_filtrado[
-                        ~df_filtrado["CODIGO"].isin(codigos_pagados)
-                    ]
-
-            total = len(df_filtrado)
-
-            if total == 0:
-                st.warning("No existen registros para generar archivos.")
-            else:
-                st.success(f"Total registros a enviar: {total}")
-
-                tamaño = total // cantidad_archivos + 1
-
-                for i in range(cantidad_archivos):
-
-                    inicio = i * tamaño
-                    fin = inicio + tamaño
-                    df_parte = df_filtrado.iloc[inicio:fin]
-
-                    if not df_parte.empty:
-
-                        csv = df_parte[
-                            ["NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO", "TIPO"]
-                        ].to_csv(index=False)
-
-                        st.download_button(
-                            label=f"Descargar SMS_{i+1}",
-                            data=csv,
-                            file_name=f"SMS_{i+1}.csv",
-                            mime="text/csv"
-                        )
+    st.download_button(
+        label="📥 Descargar Reporte Financiero Profesional",
+        data=output.getvalue(),
+        file_name="reporte_financiero_cobranza.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
