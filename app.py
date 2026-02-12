@@ -31,8 +31,41 @@ if archivo_deuda and archivo_pagos:
     df_pagos = limpiar_columnas(df_pagos)
 
     # Normalización básica
-    df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
-    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    # Detectar columna ID en deuda
+if "ID_COBRANZA" in df_deuda.columns:
+    col_id_deuda = "ID_COBRANZA"
+elif "CODIGO" in df_deuda.columns:
+    col_id_deuda = "CODIGO"
+else:
+    st.error("No se encontró columna ID_COBRANZA o CODIGO en archivo Deuda")
+    st.write("Columnas detectadas:", df_deuda.columns.tolist())
+    st.stop()
+
+# Detectar columna ID en pagos
+if "ID_COBRANZA" in df_pagos.columns:
+    col_id_pago = "ID_COBRANZA"
+elif "CODIGO" in df_pagos.columns:
+    col_id_pago = "CODIGO"
+else:
+    st.error("No se encontró columna ID_COBRANZA o CODIGO en archivo Pagos")
+    st.write("Columnas detectadas:", df_pagos.columns.tolist())
+    st.stop()
+
+df_deuda[col_id_deuda] = df_deuda[col_id_deuda].astype(str)
+df_pagos[col_id_pago] = df_pagos[col_id_pago].astype(str)
+
+df_deuda["IMPORTE"] = pd.to_numeric(df_deuda["IMPORTE"], errors="coerce").fillna(0)
+df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+# Cruce dinámico
+df = df_deuda.merge(
+    df_pagos,
+    left_on=col_id_deuda,
+    right_on=col_id_pago,
+    how="left",
+    suffixes=("_DEUDA", "_PAGO")
+)
+
 
     df_deuda["IMPORTE"] = pd.to_numeric(df_deuda["IMPORTE"], errors="coerce").fillna(0)
     df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
@@ -175,3 +208,4 @@ if archivo_suscriptor and archivo_pagos:
                         file_name=f"SMS_{i+1}.csv",
                         mime="text/csv"
                     )
+
