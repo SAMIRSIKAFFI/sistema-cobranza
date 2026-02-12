@@ -132,3 +132,86 @@ if archivo_deuda and archivo_pagos:
         file_name="reporte_financiero_cobranza.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+st.markdown("---")
+st.header("📲 Módulo Generador Masivo de SMS")
+
+archivo_suscriptor = st.file_uploader(
+    "📂 Subir Base Suscriptor (SMS)",
+    type=["xlsx"],
+    key="sms"
+)
+
+if archivo_suscriptor and archivo_pagos:
+
+    df_suscriptor = pd.read_excel(archivo_suscriptor)
+    df_suscriptor = limpiar_columnas(df_suscriptor)
+
+    df_pagos_sms = pd.read_excel(archivo_pagos)
+    df_pagos_sms = limpiar_columnas(df_pagos_sms)
+
+    df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+    df_suscriptor["TIPO"] = df_suscriptor["TIPO"].astype(str)
+
+    df_pagos_sms["ID_COBRANZA"] = df_pagos_sms["ID_COBRANZA"].astype(str)
+    df_pagos_sms["PERIODO"] = df_pagos_sms["PERIODO"].astype(str)
+
+    periodo_sms = st.selectbox(
+        "📅 Seleccionar PERIODO a gestionar",
+        sorted(df_pagos_sms["PERIODO"].unique())
+    )
+
+    cantidad_archivos = st.number_input(
+        "📁 Cantidad de archivos CSV a generar",
+        min_value=1,
+        max_value=50,
+        value=10
+    )
+
+    depurar = st.checkbox("☑ Depurar pagos automáticamente", value=True)
+
+    if st.button("🚀 Generar Archivos SMS"):
+
+        df_filtrado = df_suscriptor.copy()
+
+        if depurar:
+            pagos_periodo = df_pagos_sms[
+                (df_pagos_sms["PERIODO"] == periodo_sms) &
+                (df_pagos_sms["IMPORTE"] > 0)
+            ]
+
+            codigos_pagados = pagos_periodo["ID_COBRANZA"].unique()
+
+            df_filtrado = df_filtrado[
+                ~df_filtrado["CODIGO"].isin(codigos_pagados)
+            ]
+
+        total_registros = len(df_filtrado)
+
+        if total_registros == 0:
+            st.warning("No existen registros para generar archivos.")
+        else:
+
+            st.success(f"Total registros a enviar: {total_registros}")
+
+            tamaño_lote = total_registros // cantidad_archivos + 1
+
+            for i in range(cantidad_archivos):
+
+                inicio = i * tamaño_lote
+                fin = inicio + tamaño_lote
+
+                df_parte = df_filtrado.iloc[inicio:fin]
+
+                if not df_parte.empty:
+
+                    csv = df_parte[
+                        ["NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO", "TIPO"]
+                    ].to_csv(index=False)
+
+                    st.download_button(
+                        label=f"📥 Descargar Archivo_SMS_{i+1}.csv",
+                        data=csv,
+                        file_name=f"SMS_{periodo_sms}_{i+1}.csv",
+                        mime="text/csv"
+                    )
+
