@@ -133,6 +133,7 @@ if archivo_deuda and archivo_pagos:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 st.markdown("---")
+st.markdown("---")
 st.header("📲 Módulo Generador Masivo de SMS")
 
 archivo_suscriptor = st.file_uploader(
@@ -150,14 +151,28 @@ if archivo_suscriptor and archivo_pagos:
     df_pagos_sms = limpiar_columnas(df_pagos_sms)
 
     df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+    df_suscriptor["PERIODO"] = df_suscriptor["PERIODO"].astype(str)
     df_suscriptor["TIPO"] = df_suscriptor["TIPO"].astype(str)
 
     df_pagos_sms["ID_COBRANZA"] = df_pagos_sms["ID_COBRANZA"].astype(str)
     df_pagos_sms["PERIODO"] = df_pagos_sms["PERIODO"].astype(str)
 
-    periodo_sms = st.selectbox(
-        "📅 Seleccionar PERIODO a gestionar",
-        sorted(df_pagos_sms["PERIODO"].unique())
+    # 🔹 Selección múltiple de periodos
+    periodos_disponibles = sorted(df_suscriptor["PERIODO"].unique())
+
+    periodos_seleccionados = st.multiselect(
+        "📅 Seleccionar PERÍODOS a gestionar",
+        periodos_disponibles,
+        default=periodos_disponibles[:1]
+    )
+
+    # 🔹 Selección de TIPO
+    tipos_disponibles = sorted(df_suscriptor["TIPO"].unique())
+
+    tipos_seleccionados = st.multiselect(
+        "📌 Seleccionar TIPO",
+        tipos_disponibles,
+        default=tipos_disponibles
     )
 
     cantidad_archivos = st.number_input(
@@ -171,15 +186,20 @@ if archivo_suscriptor and archivo_pagos:
 
     if st.button("🚀 Generar Archivos SMS"):
 
-        df_filtrado = df_suscriptor.copy()
+        # Filtrar por periodo y tipo
+        df_filtrado = df_suscriptor[
+            (df_suscriptor["PERIODO"].isin(periodos_seleccionados)) &
+            (df_suscriptor["TIPO"].isin(tipos_seleccionados))
+        ].copy()
 
-        if depurar:
-            pagos_periodo = df_pagos_sms[
-                (df_pagos_sms["PERIODO"] == periodo_sms) &
+        if depurar and periodos_seleccionados:
+
+            pagos_filtrados = df_pagos_sms[
+                (df_pagos_sms["PERIODO"].isin(periodos_seleccionados)) &
                 (df_pagos_sms["IMPORTE"] > 0)
             ]
 
-            codigos_pagados = pagos_periodo["ID_COBRANZA"].unique()
+            codigos_pagados = pagos_filtrados["ID_COBRANZA"].unique()
 
             df_filtrado = df_filtrado[
                 ~df_filtrado["CODIGO"].isin(codigos_pagados)
@@ -211,7 +231,6 @@ if archivo_suscriptor and archivo_pagos:
                     st.download_button(
                         label=f"📥 Descargar Archivo_SMS_{i+1}.csv",
                         data=csv,
-                        file_name=f"SMS_{periodo_sms}_{i+1}.csv",
+                        file_name=f"SMS_{'_'.join(periodos_seleccionados)}_{i+1}.csv",
                         mime="text/csv"
                     )
-
