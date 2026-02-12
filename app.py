@@ -6,7 +6,7 @@ st.set_page_config(page_title="Sistema Integral de Cobranza", layout="wide")
 st.title("⚖️ Sistema Profesional de Cobranza")
 
 # ---------------------------------------------------
-# FUNCION LIMPIAR COLUMNAS (ROBUSTA)
+# FUNCION LIMPIAR COLUMNAS
 # ---------------------------------------------------
 
 def limpiar_columnas(df):
@@ -21,11 +21,11 @@ def limpiar_columnas(df):
 
 
 # ---------------------------------------------------
-# CARGA ARCHIVOS PRINCIPALES
+# CARGA ARCHIVOS DEUDA Y PAGOS
 # ---------------------------------------------------
 
-archivo_deuda = st.file_uploader("📂 Subir Archivo Deuda", type=["xlsx"])
-archivo_pagos = st.file_uploader("📂 Subir Archivo Pagos", type=["xlsx"])
+archivo_deuda = st.file_uploader("📂 Subir Archivo DEUDA", type=["xlsx"])
+archivo_pagos = st.file_uploader("📂 Subir Archivo PAGOS", type=["xlsx"])
 
 if archivo_deuda is not None and archivo_pagos is not None:
 
@@ -35,49 +35,52 @@ if archivo_deuda is not None and archivo_pagos is not None:
     df_pagos = pd.read_excel(archivo_pagos)
     df_pagos = limpiar_columnas(df_pagos)
 
-    # Validar columnas necesarias
-    columnas_necesarias = ["ID_COBRANZA", "IMPORTE", "TIPO"]
-
-    for col in columnas_necesarias:
+    # Validaciones archivo DEUDA
+    columnas_deuda = ["ID_COBRANZA", "DEUDA", "TIPO"]
+    for col in columnas_deuda:
         if col not in df_deuda.columns:
-            st.error(f"❌ Falta columna '{col}' en archivo Deuda")
+            st.error(f"❌ Falta columna '{col}' en archivo DEUDA")
             st.write("Columnas detectadas:", df_deuda.columns.tolist())
             st.stop()
 
-    if "ID_COBRANZA" not in df_pagos.columns:
-        st.error("❌ Falta columna 'ID_COBRANZA' en archivo Pagos")
-        st.write("Columnas detectadas:", df_pagos.columns.tolist())
-        st.stop()
-
-    if "IMPORTE" not in df_pagos.columns:
-        st.error("❌ Falta columna 'IMPORTE' en archivo Pagos")
-        st.write("Columnas detectadas:", df_pagos.columns.tolist())
-        st.stop()
+    # Validaciones archivo PAGOS
+    columnas_pagos = ["ID_COBRANZA", "IMPORTE"]
+    for col in columnas_pagos:
+        if col not in df_pagos.columns:
+            st.error(f"❌ Falta columna '{col}' en archivo PAGOS")
+            st.write("Columnas detectadas:", df_pagos.columns.tolist())
+            st.stop()
 
     # Normalización tipos
     df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
 
-    df_deuda["IMPORTE"] = pd.to_numeric(df_deuda["IMPORTE"], errors="coerce").fillna(0)
+    df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
     df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+    # Agrupar pagos por ID_COBRANZA
+    pagos_resumen = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
 
     # Cruce
     df = df_deuda.merge(
-        df_pagos,
+        pagos_resumen,
         on="ID_COBRANZA",
-        how="left",
-        suffixes=("_DEUDA", "_PAGO")
+        how="left"
     )
 
-    df["IMPORTE_PAGO"] = df["IMPORTE_PAGO"].fillna(0)
-    df["PENDIENTE"] = df["IMPORTE_DEUDA"] - df["IMPORTE_PAGO"]
+    df["IMPORTE"] = df["IMPORTE"].fillna(0)
+    df["PENDIENTE"] = df["DEUDA"] - df["IMPORTE"]
+
+    # ---------------------------------------------------
+    # DASHBOARD EJECUTIVO
+    # ---------------------------------------------------
 
     st.subheader("📊 Dashboard Ejecutivo")
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("💰 Total Deuda", f"{df['IMPORTE_DEUDA'].sum():,.2f}")
-    col2.metric("💵 Total Pagado", f"{df['IMPORTE_PAGO'].sum():,.2f}")
+    col1.metric("💰 Total Deuda", f"{df['DEUDA'].sum():,.2f}")
+    col2.metric("💵 Total Pagado", f"{df['IMPORTE'].sum():,.2f}")
     col3.metric("⚠ Total Pendiente", f"{df['PENDIENTE'].sum():,.2f}")
 
     st.bar_chart(df.groupby("TIPO")["PENDIENTE"].sum())
