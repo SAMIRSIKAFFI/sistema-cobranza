@@ -116,7 +116,19 @@ if archivo_suscriptor is not None and archivo_pagos is not None:
             st.stop()
 
     # Crear PERIODO desde FECHA
-    df_suscriptor["FECHA"] = pd.to_datetime(df_suscriptor["FECHA"], dayfirst=True)
+    # Conversión robusta de FECHA
+df_suscriptor["FECHA"] = pd.to_datetime(
+    df_suscriptor["FECHA"],
+    errors="coerce",
+    dayfirst=True
+)
+
+# Eliminar registros donde no se pudo convertir fecha
+df_suscriptor = df_suscriptor.dropna(subset=["FECHA"])
+
+# Crear PERIODO
+df_suscriptor["PERIODO"] = df_suscriptor["FECHA"].dt.strftime("%Y-%m")
+
     df_suscriptor["PERIODO"] = df_suscriptor["FECHA"].dt.strftime("%Y-%m")
 
     df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
@@ -172,3 +184,4 @@ if archivo_suscriptor is not None and archivo_pagos is not None:
                         file_name=f"SMS_{i+1}.csv",
                         mime="text/csv"
                     )
+
