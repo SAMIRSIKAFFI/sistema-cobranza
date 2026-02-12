@@ -151,7 +151,35 @@ if archivo_suscriptor and archivo_pagos:
     df_pagos_sms = limpiar_columnas(df_pagos_sms)
 
     df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
-    df_suscriptor["PERIODO"] = df_suscriptor["PERIODO"].astype(str)
+    df_suscriptor = pd.read_excel(archivo_suscriptor)
+df_suscriptor = limpiar_columnas(df_suscriptor)
+
+df_pagos_sms = pd.read_excel(archivo_pagos)
+df_pagos_sms = limpiar_columnas(df_pagos_sms)
+
+# 🔹 Validar columnas obligatorias
+columnas_requeridas = ["CODIGO", "TIPO", "NUMERO", "NOMBRE", "FECHA", "MONTO"]
+
+for col in columnas_requeridas:
+    if col not in df_suscriptor.columns:
+        st.error(f"❌ La columna '{col}' no existe en Base Suscriptor.")
+        st.write("Columnas detectadas:", df_suscriptor.columns.tolist())
+        st.stop()
+
+# 🔹 Crear PERIODO desde FECHA automáticamente
+try:
+    df_suscriptor["FECHA"] = pd.to_datetime(df_suscriptor["FECHA"], dayfirst=True)
+    df_suscriptor["PERIODO"] = df_suscriptor["FECHA"].dt.strftime("%Y-%m")
+except:
+    st.error("❌ Error al convertir la columna FECHA. Verifique el formato.")
+    st.stop()
+
+df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+df_suscriptor["TIPO"] = df_suscriptor["TIPO"].astype(str)
+
+df_pagos_sms["ID_COBRANZA"] = df_pagos_sms["ID_COBRANZA"].astype(str)
+df_pagos_sms["PERIODO"] = df_pagos_sms["PERIODO"].astype(str)
+
     df_suscriptor["TIPO"] = df_suscriptor["TIPO"].astype(str)
 
     df_pagos_sms["ID_COBRANZA"] = df_pagos_sms["ID_COBRANZA"].astype(str)
@@ -234,3 +262,4 @@ if archivo_suscriptor and archivo_pagos:
                         file_name=f"SMS_{'_'.join(periodos_seleccionados)}_{i+1}.csv",
                         mime="text/csv"
                     )
+
