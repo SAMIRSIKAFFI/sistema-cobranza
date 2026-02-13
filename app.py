@@ -12,7 +12,7 @@ menu = st.sidebar.radio(
     "MENÚ PRINCIPAL",
     [
         "📊 Dashboard Cruce Deuda vs Pagos",
-        "🚧 Módulo SMS (En Desarrollo)",
+        "📲 GENERADOR DE SMS",
         "🚧 Módulo Histórico (En Desarrollo)"
     ]
 )
@@ -29,10 +29,6 @@ def modulo_cruce():
     def limpiar_columnas(df):
         df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
         return df
-
-    # =====================================================
-    # CARGA INTELIGENTE DE CARTERA (SE GUARDA EN MEMORIA)
-    # =====================================================
 
     if "df_deuda_base" not in st.session_state:
         st.session_state.df_deuda_base = None
@@ -73,10 +69,6 @@ def modulo_cruce():
             st.session_state.df_deuda_base = None
             st.rerun()
 
-    # =====================================================
-    # CARGA DE PAGOS (SIEMPRE ACTUAL)
-    # =====================================================
-
     archivo_pagos = st.file_uploader(
         "💵 Subir archivo PAGOS (Puede actualizarse constantemente)",
         type=["xlsx"]
@@ -84,10 +76,6 @@ def modulo_cruce():
 
     if not archivo_pagos:
         return
-
-    # =====================================================
-    # PROCESAMIENTO
-    # =====================================================
 
     df_deuda = st.session_state.df_deuda_base.copy()
     df_pagos = pd.read_excel(archivo_pagos)
@@ -104,7 +92,6 @@ def modulo_cruce():
     df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
     df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
 
-    # Cruce
     pagos_resumen = df_pagos.groupby(
         ["ID_COBRANZA", "PERIODO"]
     )["IMPORTE"].sum().reset_index()
@@ -126,10 +113,6 @@ def modulo_cruce():
 
     pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
-    # =====================================================
-    # INDICADORES
-    # =====================================================
-
     total_deuda = resultado["DEUDA"].sum()
     total_pagado = resultado["TOTAL_PAGADO"].sum()
     total_pendiente = pendientes["DEUDA"].sum()
@@ -147,10 +130,6 @@ def modulo_cruce():
     col3.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
     col4.metric("📈 % Recuperación", f"{porcentaje_recuperacion:.2f}%")
 
-    # =====================================================
-    # RESÚMENES
-    # =====================================================
-
     resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
     resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
     pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
@@ -167,16 +146,11 @@ def modulo_cruce():
     if not pagos_por_periodo.empty:
         st.line_chart(pagos_por_periodo.set_index("PERIODO"))
 
-    # Ranking
     top_morosos = pendientes.groupby("ID_COBRANZA")["DEUDA"].sum().reset_index()
     top_morosos = top_morosos.sort_values(by="DEUDA", ascending=False).head(10)
 
     st.subheader("🏆 Top 10 Mayores Deudores")
     st.dataframe(top_morosos)
-
-    # =====================================================
-    # EXPORTACIÓN PROFESIONAL
-    # =====================================================
 
     output = io.BytesIO()
 
@@ -188,38 +162,6 @@ def modulo_cruce():
         pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
         pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
 
-        if not pendientes.empty:
-            for periodo in pendientes["PERIODO"].unique():
-                df_periodo = pendientes[pendientes["PERIODO"] == periodo]
-                nombre_hoja = f"PEND_{periodo}"
-                df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
-
-        workbook = writer.book
-
-        for sheet in workbook.worksheets:
-
-            for col in sheet.columns:
-                max_length = 0
-                col_letter = get_column_letter(col[0].column)
-
-                for cell in col:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-
-                sheet.column_dimensions[col_letter].width = max_length + 2
-
-            for cell in sheet[1]:
-                cell.font = Font(bold=True)
-
-            columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
-
-            for col in sheet.columns:
-                header = col[0].value
-                if header in columnas_monetarias:
-                    for cell in col[1:]:
-                        if isinstance(cell.value, (int, float)):
-                            cell.number_format = '#,##0.00'
-
     st.download_button(
         label="📥 Descargar Reporte Financiero Profesional",
         data=output.getvalue(),
@@ -229,15 +171,92 @@ def modulo_cruce():
 
 
 # ==========================================================
-# EJECUCIÓN SEGÚN MENÚ
+# MODULO 2 - GENERADOR DE SMS
+# ==========================================================
+
+def modulo_sms():
+
+    st.title("📲 GENERADOR PROFESIONAL DE SMS")
+
+    def limpiar_columnas(df):
+        df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
+        return df
+
+    archivo_suscriptor = st.file_uploader("📂 Cargar BASE POR SUSCRIPTOR", type=["xlsx"])
+    archivo_pagos = st.file_uploader("💵 Cargar BASE DE PAGOS", type=["xlsx"])
+
+    if not archivo_suscriptor or not archivo_pagos:
+        return
+
+    df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
+    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+
+    df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+    df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+    pagos_totales = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
+    pagos_totales.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
+
+    df_final = df_suscriptor.merge(
+        pagos_totales,
+        left_on="CODIGO",
+        right_on="ID_COBRANZA",
+        how="left"
+    )
+
+    df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
+
+    # Elimina completamente pagados
+    df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
+
+    st.subheader("📅 Fecha editable")
+    fecha_sms = st.text_input("Fecha formato largo (Ej: sábado, 14 de febrero de 2026)")
+    if fecha_sms:
+        df_final["FECHA"] = fecha_sms
+
+    st.subheader("Vista previa final")
+    st.dataframe(df_final)
+
+    partes = st.number_input("Cantidad de archivos CSV", min_value=1, value=1)
+    prefijo = st.text_input("Prefijo archivos", value="SMS")
+
+    if st.button("Generar CSV"):
+
+        if df_final.empty:
+            st.warning("No existen registros.")
+            return
+
+        tamaño = len(df_final) // partes + 1
+
+        for i in range(partes):
+            inicio = i * tamaño
+            fin = inicio + tamaño
+            df_parte = df_final.iloc[inicio:fin]
+
+            if df_parte.empty:
+                continue
+
+            csv = df_parte.to_csv(index=False, encoding="utf-8-sig")
+
+            st.download_button(
+                label=f"Descargar {prefijo}_{i+1}.csv",
+                data=csv,
+                file_name=f"{prefijo}_{i+1}.csv",
+                mime="text/csv"
+            )
+
+
+# ==========================================================
+# EJECUCIÓN
 # ==========================================================
 
 if menu == "📊 Dashboard Cruce Deuda vs Pagos":
     modulo_cruce()
 
-elif menu == "🚧 Módulo SMS (En Desarrollo)":
-    st.title("📲 Módulo SMS")
-    st.info("Este módulo será desarrollado en la siguiente fase.")
+elif menu == "📲 GENERADOR DE SMS":
+    modulo_sms()
 
 elif menu == "🚧 Módulo Histórico (En Desarrollo)":
     st.title("📈 Histórico")
