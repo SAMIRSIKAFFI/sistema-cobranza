@@ -154,12 +154,10 @@ def modulo_sms():
     )
 
     df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
-
     df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
 
-    # 🔹 SOLO COLUMNAS NECESARIAS PARA EXPORTAR
-    columnas_exportar = ["N", "NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"]
-
+    # 🔹 SOLO LAS 5 COLUMNAS DEFINITIVAS
+    columnas_exportar = ["NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"]
     df_export = df_final[columnas_exportar].copy()
 
     st.subheader("Vista previa final")
