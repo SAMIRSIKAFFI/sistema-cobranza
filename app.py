@@ -1,181 +1,263 @@
 import streamlit as st
 import pandas as pd
-from io import StringIO
-from datetime import datetime
+import io
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 st.set_page_config(page_title="SISTEMA DE COBRANZA - RESULTADOS", layout="wide")
 
-# =====================================================
-# INICIALIZAR MEMORIA
-# =====================================================
-
-if "df_deuda" not in st.session_state:
-    st.session_state.df_deuda = None
-
-# =====================================================
-# FUNCIONES
-# =====================================================
-
-def normalizar_columnas(df):
-    df.columns = df.columns.str.strip().str.upper()
-    return df
-
-
-def preparar_deuda(df):
-    df = normalizar_columnas(df)
-
-    columnas_requeridas = ["ID_CLIENTE", "NOMBRE_CLIENTE", "ID_COBRANZA", "PERIODO", "DEUDA"]
-
-    if not all(col in df.columns for col in columnas_requeridas):
-        st.error(f"El archivo CARTERA debe contener columnas: {columnas_requeridas}")
-        return None
-
-    df = df[columnas_requeridas].copy()
-
-    df["ID_COBRANZA"] = df["ID_COBRANZA"].astype(str)
-    df["PERIODO"] = df["PERIODO"].astype(str)
-    df["DEUDA"] = pd.to_numeric(df["DEUDA"], errors="coerce").fillna(0)
-
-    return df
-
-
-def preparar_pagos(df):
-    df = normalizar_columnas(df)
-
-    columnas_requeridas = ["ID_COBRANZA", "FECHA", "MONTO"]
-
-    if not all(col in df.columns for col in columnas_requeridas):
-        st.error(f"El archivo PAGOS debe contener columnas: {columnas_requeridas}")
-        return None
-
-    df = df[columnas_requeridas].copy()
-
-    df["ID_COBRANZA"] = df["ID_COBRANZA"].astype(str)
-    df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
-    df["PERIODO"] = df["FECHA"].dt.strftime("%Y-%m")
-    df["MONTO"] = pd.to_numeric(df["MONTO"], errors="coerce").fillna(0)
-
-    df = df.groupby(["ID_COBRANZA", "PERIODO"], as_index=False)["MONTO"].sum()
-
-    return df
-
-
-def generar_csv_excel(df):
-    df_export = df.copy()
-
-    # Formatear monto con coma decimal
-    df_export["MONTO"] = df_export["MONTO"].map(
-        lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    )
-
-    buffer = StringIO()
-
-    df_export.to_csv(
-        buffer,
-        index=False,
-        sep=";",
-        encoding="utf-8-sig"
-    )
-
-    return buffer.getvalue()
-
-
-# =====================================================
-# INTERFAZ
-# =====================================================
-
-st.title("SISTEMA DE COBRANZA - RESULTADOS")
+st.sidebar.title("SISTEMA DE COBRANZA - RESULTADOS")
 
 menu = st.sidebar.radio(
     "MENÚ PRINCIPAL",
-    ["Cargar Cartera", "Cruce Deuda vs Pagos", "Exportar Resultados"]
+    [
+        "📊 Dashboard Cruce Deuda vs Pagos",
+        "📲 GENERADOR DE SMS",
+        "🚧 Módulo Histórico (En Desarrollo)"
+    ]
 )
 
-# =====================================================
-# CARGAR CARTERA
-# =====================================================
+# ==========================================================
+# MODULO 1 - CRUCE DEUDA VS PAGOS
+# ==========================================================
 
-if menu == "Cargar Cartera":
+def modulo_cruce():
 
-    st.header("Cargar Base de Cartera / Deuda")
+    st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
+    st.markdown("### 📊 Dashboard Ejecutivo de Recuperación")
 
-    archivo_deuda = st.file_uploader("Subir archivo CARTERA", type=["xlsx", "xls", "csv"])
+    def limpiar_columnas(df):
+        df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
+        return df
 
-    if archivo_deuda is not None:
+    if "df_deuda_base" not in st.session_state:
+        st.session_state.df_deuda_base = None
 
-        if archivo_deuda.name.endswith(".csv"):
-            df = pd.read_csv(archivo_deuda)
-        else:
-            df = pd.read_excel(archivo_deuda)
+    if st.session_state.df_deuda_base is None:
 
-        df_preparado = preparar_deuda(df)
-
-        if df_preparado is not None:
-            st.session_state.df_deuda = df_preparado
-            st.success("Cartera cargada correctamente y guardada en memoria.")
-            st.dataframe(df_preparado.head())
-
-# =====================================================
-# CRUCE
-# =====================================================
-
-elif menu == "Cruce Deuda vs Pagos":
-
-    st.header("Cruce Deuda vs Pagos")
-
-    if st.session_state.df_deuda is None:
-        st.warning("Primero debe cargar la CARTERA.")
-    else:
-        archivo_pagos = st.file_uploader("Subir archivo PAGOS", type=["xlsx", "xls", "csv"])
-
-        if archivo_pagos is not None:
-
-            if archivo_pagos.name.endswith(".csv"):
-                df_pagos = pd.read_csv(archivo_pagos)
-            else:
-                df_pagos = pd.read_excel(archivo_pagos)
-
-            pagos = preparar_pagos(df_pagos)
-
-            if pagos is not None:
-
-                df_deuda = st.session_state.df_deuda.copy()
-
-                resultado = df_deuda.merge(
-                    pagos,
-                    on=["ID_COBRANZA", "PERIODO"],
-                    how="left"
-                )
-
-                resultado["MONTO"] = resultado["MONTO"].fillna(0)
-                resultado["SALDO"] = resultado["DEUDA"] - resultado["MONTO"]
-
-                st.session_state.resultado = resultado
-
-                st.success("Cruce realizado correctamente.")
-                st.dataframe(resultado.head())
-
-# =====================================================
-# EXPORTAR
-# =====================================================
-
-elif menu == "Exportar Resultados":
-
-    st.header("Exportar CSV para Excel")
-
-    if "resultado" not in st.session_state:
-        st.warning("Primero debe realizar el cruce.")
-    else:
-
-        df_export = st.session_state.resultado[
-            ["ID_CLIENTE", "NOMBRE_CLIENTE", "ID_COBRANZA", "PERIODO", "DEUDA", "MONTO", "SALDO"]
-        ]
-
-        csv_final = generar_csv_excel(df_export)
-
-        st.download_button(
-            label="Descargar CSV listo para Excel",
-            data=csv_final,
-            file_name="reporte_cobranza.csv",
-            mime="text/csv"
+        archivo_deuda = st.file_uploader(
+            "📂 Subir archivo CARTERA / DEUDA (Se cargará una sola vez)",
+            type=["xlsx"]
         )
+
+        if archivo_deuda:
+
+            df_deuda = pd.read_excel(archivo_deuda)
+            df_deuda = limpiar_columnas(df_deuda)
+
+            columnas_deuda = {"ID_COBRANZA", "PERIODO", "DEUDA", "TIPO"}
+
+            if not columnas_deuda.issubset(df_deuda.columns):
+                st.error("El archivo CARTERA no tiene las columnas obligatorias.")
+                return
+
+            df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
+            df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
+            df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
+
+            st.session_state.df_deuda_base = df_deuda
+
+            st.success("✅ Cartera cargada correctamente y guardada en memoria.")
+            st.rerun()
+
+        return
+
+    else:
+        st.success("📁 Cartera base cargada en memoria.")
+
+        if st.button("🔄 Reemplazar Cartera"):
+            st.session_state.df_deuda_base = None
+            st.rerun()
+
+    archivo_pagos = st.file_uploader(
+        "💵 Subir archivo PAGOS (Puede actualizarse constantemente)",
+        type=["xlsx"]
+    )
+
+    if not archivo_pagos:
+        return
+
+    df_deuda = st.session_state.df_deuda_base.copy()
+    df_pagos = pd.read_excel(archivo_pagos)
+
+    df_pagos = limpiar_columnas(df_pagos)
+
+    columnas_pagos = {"ID_COBRANZA", "PERIODO", "IMPORTE"}
+
+    if not columnas_pagos.issubset(df_pagos.columns):
+        st.error("El archivo PAGOS no tiene las columnas obligatorias.")
+        return
+
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
+    df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+    pagos_resumen = df_pagos.groupby(
+        ["ID_COBRANZA", "PERIODO"]
+    )["IMPORTE"].sum().reset_index()
+
+    pagos_resumen.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
+
+    resultado = df_deuda.merge(
+        pagos_resumen,
+        on=["ID_COBRANZA", "PERIODO"],
+        how="left"
+    )
+
+    resultado["TOTAL_PAGADO"] = resultado["TOTAL_PAGADO"].fillna(0)
+
+    resultado["ESTADO"] = resultado.apply(
+        lambda row: "PAGADO" if row["TOTAL_PAGADO"] >= row["DEUDA"] else "PENDIENTE",
+        axis=1
+    )
+
+    pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
+
+    total_deuda = resultado["DEUDA"].sum()
+    total_pagado = resultado["TOTAL_PAGADO"].sum()
+    total_pendiente = pendientes["DEUDA"].sum()
+
+    porcentaje_recuperacion = 0
+    if total_deuda > 0:
+        porcentaje_recuperacion = (total_pagado / total_deuda) * 100
+
+    st.success("Cruce realizado correctamente")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("💼 Total Cartera", f"Bs. {total_deuda:,.2f}")
+    col2.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
+    col3.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
+    col4.metric("📈 % Recuperación", f"{porcentaje_recuperacion:.2f}%")
+
+    resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
+    resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
+    pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
+
+    st.subheader("📊 Deuda Pendiente por TIPO")
+    if not resumen_tipo.empty:
+        st.bar_chart(resumen_tipo.set_index("TIPO"))
+
+    st.subheader("📆 Deuda Pendiente por PERIODO")
+    if not resumen_periodo.empty:
+        st.line_chart(resumen_periodo.set_index("PERIODO"))
+
+    st.subheader("💵 Pagos por PERIODO")
+    if not pagos_por_periodo.empty:
+        st.line_chart(pagos_por_periodo.set_index("PERIODO"))
+
+    top_morosos = pendientes.groupby("ID_COBRANZA")["DEUDA"].sum().reset_index()
+    top_morosos = top_morosos.sort_values(by="DEUDA", ascending=False).head(10)
+
+    st.subheader("🏆 Top 10 Mayores Deudores")
+    st.dataframe(top_morosos)
+
+    output = io.BytesIO()
+
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+
+        resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
+        resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
+        resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
+        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
+        pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
+
+    st.download_button(
+        label="📥 Descargar Reporte Financiero Profesional",
+        data=output.getvalue(),
+        file_name="reporte_financiero_cobranza.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+# ==========================================================
+# MODULO 2 - GENERADOR DE SMS
+# ==========================================================
+
+def modulo_sms():
+
+    st.title("📲 GENERADOR PROFESIONAL DE SMS")
+
+    def limpiar_columnas(df):
+        df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
+        return df
+
+    archivo_suscriptor = st.file_uploader("📂 Cargar BASE POR SUSCRIPTOR", type=["xlsx"])
+    archivo_pagos = st.file_uploader("💵 Cargar BASE DE PAGOS", type=["xlsx"])
+
+    if not archivo_suscriptor or not archivo_pagos:
+        return
+
+    df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
+    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+
+    df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
+    df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+    pagos_totales = df_pagos.groupby("ID_COBRANZA")["IMPORTE"].sum().reset_index()
+    pagos_totales.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
+
+    df_final = df_suscriptor.merge(
+        pagos_totales,
+        left_on="CODIGO",
+        right_on="ID_COBRANZA",
+        how="left"
+    )
+
+    df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
+
+    # Elimina completamente pagados
+    df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
+
+    st.subheader("📅 Fecha editable")
+    fecha_sms = st.text_input("Fecha formato largo (Ej: sábado, 14 de febrero de 2026)")
+    if fecha_sms:
+        df_final["FECHA"] = fecha_sms
+
+    st.subheader("Vista previa final")
+    st.dataframe(df_final)
+
+    partes = st.number_input("Cantidad de archivos CSV", min_value=1, value=1)
+    prefijo = st.text_input("Prefijo archivos", value="SMS")
+
+    if st.button("Generar CSV"):
+
+        if df_final.empty:
+            st.warning("No existen registros.")
+            return
+
+        tamaño = len(df_final) // partes + 1
+
+        for i in range(partes):
+            inicio = i * tamaño
+            fin = inicio + tamaño
+            df_parte = df_final.iloc[inicio:fin]
+
+            if df_parte.empty:
+                continue
+
+            csv = df_parte.to_csv(index=False, encoding="utf-8-sig")
+
+            st.download_button(
+                label=f"Descargar {prefijo}_{i+1}.csv",
+                data=csv,
+                file_name=f"{prefijo}_{i+1}.csv",
+                mime="text/csv"
+            )
+
+
+# ==========================================================
+# EJECUCIÓN
+# ==========================================================
+
+if menu == "📊 Dashboard Cruce Deuda vs Pagos":
+    modulo_cruce()
+
+elif menu == "📲 GENERADOR DE SMS":
+    modulo_sms()
+
+elif menu == "🚧 Módulo Histórico (En Desarrollo)":
+    st.title("📈 Histórico")
+    st.info("Aquí construiremos el dashboard acumulado mensual.")
