@@ -4,198 +4,131 @@ import io
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-# ============================================
-# CONFIGURACIÓN GENERAL
-# ============================================
-st.set_page_config(
-    page_title="Sistema Ejecutivo de Cobranza",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="Sistema Profesional de Cobranza", layout="wide")
 
-# ============================================
-# ESTILO VISUAL CORPORATIVO
-# ============================================
-st.markdown("""
-<style>
-.main {
-    background-color: #f4f6f9;
-}
-h1, h2, h3 {
-    color: #1f2937;
-}
-.sidebar .sidebar-content {
-    background-color: #111827;
-}
-</style>
-""", unsafe_allow_html=True)
+st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
 
-# ============================================
-# MENÚ PRINCIPAL
-# ============================================
-st.sidebar.title("⚖️ SISTEMA DE COBRANZA")
-menu = st.sidebar.radio(
-    "Menú Principal",
-    [
-        "📊 Dashboard Cobranza",
-        "📈 Aging Report (Próximamente)",
-        "🧾 Intereses (Próximamente)",
-        "📄 Cartas Automáticas (Próximamente)",
-        "⚙️ Configuración"
-    ]
-)
+archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
+archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
 
-# ============================================
-# FUNCIÓN LIMPIAR COLUMNAS
-# ============================================
+
 def limpiar_columnas(df):
     df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
     return df
 
-# ============================================
-# 1️⃣ DASHBOARD PRINCIPAL
-# ============================================
-if menu == "📊 Dashboard Cobranza":
 
-    st.title("📊 Dashboard Ejecutivo de Recuperación")
+if archivo_deuda and archivo_pagos:
 
-    archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
-    archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
+    df_deuda = pd.read_excel(archivo_deuda)
+    df_pagos = pd.read_excel(archivo_pagos)
 
-    if archivo_deuda and archivo_pagos:
+    df_deuda = limpiar_columnas(df_deuda)
+    df_pagos = limpiar_columnas(df_pagos)
 
-        columnas_deuda_obligatorias = {"ID_COBRANZA", "PERIODO", "TIPO", "DEUDA"}
-        columnas_pagos_obligatorias = {"ID_COBRANZA", "PERIODO", "IMPORTE"}
+    df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
+    df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
 
-        df_deuda = limpiar_columnas(pd.read_excel(archivo_deuda))
-        df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+    df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
+    df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
 
-        if not columnas_deuda_obligatorias.issubset(df_deuda.columns):
-            st.error("El archivo CARTERA no contiene las columnas obligatorias.")
-            st.stop()
+    pagos_resumen = df_pagos.groupby(
+        ["ID_COBRANZA", "PERIODO"]
+    )["IMPORTE"].sum().reset_index()
 
-        if not columnas_pagos_obligatorias.issubset(df_pagos.columns):
-            st.error("El archivo PAGOS no contiene las columnas obligatorias.")
-            st.stop()
+    pagos_resumen.rename(columns={"IMPORTE": "TOTAL_PAGADO"}, inplace=True)
 
-        df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
-        df_deuda["PERIODO"] = df_deuda["PERIODO"].astype(str)
-        df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
-        df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
+    resultado = df_deuda.merge(
+        pagos_resumen,
+        on=["ID_COBRANZA", "PERIODO"],
+        how="left"
+    )
 
-        df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
-        df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+    resultado["TOTAL_PAGADO"] = resultado["TOTAL_PAGADO"].fillna(0)
 
-        pagos_resumen = (
-            df_pagos
-            .groupby(["ID_COBRANZA", "PERIODO"])["IMPORTE"]
-            .sum()
-            .reset_index()
-            .rename(columns={"IMPORTE": "TOTAL_PAGADO"})
-        )
+    resultado["ESTADO"] = resultado.apply(
+        lambda row: "PAGADO" if row["TOTAL_PAGADO"] >= row["DEUDA"] else "PENDIENTE",
+        axis=1
+    )
 
-        resultado = df_deuda.merge(
-            pagos_resumen,
-            on=["ID_COBRANZA", "PERIODO"],
-            how="left"
-        )
+    pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
-        resultado["TOTAL_PAGADO"] = resultado["TOTAL_PAGADO"].fillna(0)
-        resultado["SALDO"] = resultado["DEUDA"] - resultado["TOTAL_PAGADO"]
-        resultado["ESTADO"] = resultado["SALDO"].apply(
-            lambda x: "PAGADO" if x <= 0 else "PENDIENTE"
-        )
+    resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
+    resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
+    pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
 
-        pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
+    total_pendiente = pendientes["DEUDA"].sum()
+    total_pagado = resultado["TOTAL_PAGADO"].sum()
 
-        # ================= KPIs =================
-        total_deuda = resultado["DEUDA"].sum()
-        total_pagado = resultado["TOTAL_PAGADO"].sum()
-        total_pendiente = pendientes["SALDO"].sum()
-        porcentaje_recuperacion = (
-            (total_pagado / total_deuda) * 100 if total_deuda > 0 else 0
-        )
+    st.success("Cruce realizado correctamente")
 
-        col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
+    col1.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
+    col2.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
 
-        col1.metric("💼 Total Cartera", f"Bs. {total_deuda:,.2f}")
-        col2.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
-        col3.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
-        col4.metric("📈 % Recuperación", f"{porcentaje_recuperacion:.2f}%")
+    st.subheader("📊 Resumen por TIPO")
+    st.dataframe(resumen_tipo)
 
-        # ================= GRÁFICOS =================
-        resumen_tipo = pendientes.groupby("TIPO")["SALDO"].sum().reset_index()
-        resumen_periodo = pendientes.groupby("PERIODO")["SALDO"].sum().reset_index()
+    st.subheader("📆 Deuda Pendiente por PERIODO")
+    st.dataframe(resumen_periodo)
 
-        colA, colB = st.columns(2)
+    st.subheader("💵 Pagos por PERIODO")
+    st.dataframe(pagos_por_periodo)
 
-        with colA:
-            st.subheader("📊 Deuda Pendiente por TIPO")
-            st.bar_chart(resumen_tipo.set_index("TIPO"))
+    st.subheader("📊 Comparativo Pagado vs Pendiente")
+    comparativo = pd.DataFrame({
+        "Pagado": [total_pagado],
+        "Pendiente": [total_pendiente]
+    })
+    st.bar_chart(comparativo)
 
-        with colB:
-            st.subheader("📆 Deuda Pendiente por PERIODO")
-            st.line_chart(resumen_periodo.set_index("PERIODO"))
+    # ---------- EXPORTACIÓN EXCEL PROFESIONAL ----------
+    output = io.BytesIO()
 
-        # ================= RANKING =================
-        st.subheader("🏆 Top 10 Mayores Deudores")
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
 
-        top_morosos = (
-            pendientes
-            .groupby("ID_COBRANZA")["SALDO"]
-            .sum()
-            .reset_index()
-            .sort_values(by="SALDO", ascending=False)
-            .head(10)
-        )
+        resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
+        resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
+        resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
+        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
+        pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
 
-        st.dataframe(top_morosos, use_container_width=True)
+        for periodo in pendientes["PERIODO"].unique():
+            df_periodo = pendientes[pendientes["PERIODO"] == periodo]
+            nombre_hoja = f"PEND_{periodo}"
+            df_periodo.to_excel(writer, sheet_name=nombre_hoja[:31], index=False)
 
-        # ================= EXPORTAR =================
-        output = io.BytesIO()
+        workbook = writer.book
 
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            resultado.to_excel(writer, sheet_name="RESULTADO", index=False)
-            pendientes.to_excel(writer, sheet_name="PENDIENTES", index=False)
+        for sheet in workbook.worksheets:
 
-            workbook = writer.book
+            # Ajustar ancho columnas
+            for col in sheet.columns:
+                max_length = 0
+                col_letter = get_column_letter(col[0].column)
 
-            for sheet in workbook.worksheets:
-                for col in sheet.columns:
-                    max_length = 0
-                    col_letter = get_column_letter(col[0].column)
+                for cell in col:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
 
-                    for cell in col:
-                        if cell.value:
-                            max_length = max(max_length, len(str(cell.value)))
+                sheet.column_dimensions[col_letter].width = max_length + 2
 
-                    sheet.column_dimensions[col_letter].width = max_length + 2
+            # Encabezados en negrita
+            for cell in sheet[1]:
+                cell.font = Font(bold=True)
 
-                for cell in sheet[1]:
-                    cell.font = Font(bold=True)
+            # Formato monetario SOLO columnas correctas
+            columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
 
-        st.download_button(
-            label="📥 Descargar Reporte Profesional",
-            data=output.getvalue(),
-            file_name="reporte_cobranza.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            for col in sheet.columns:
+                header = col[0].value
+                if header in columnas_monetarias:
+                    for cell in col[1:]:
+                        if isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
 
-# ============================================
-# 2️⃣ MÓDULOS FUTUROS
-# ============================================
-elif menu == "📈 Aging Report (Próximamente)":
-    st.title("📈 Aging Report")
-    st.info("Este módulo permitirá clasificar la cartera por rangos de mora (0-30, 31-60, 61-90, 90+ días).")
-
-elif menu == "🧾 Intereses (Próximamente)":
-    st.title("🧾 Cálculo de Intereses")
-    st.info("Aquí podremos calcular intereses automáticos por mora.")
-
-elif menu == "📄 Cartas Automáticas (Próximamente)":
-    st.title("📄 Generador de Cartas")
-    st.info("Permitirá generar cartas de cobranza automáticas en Word o PDF.")
-
-elif menu == "⚙️ Configuración":
-    st.title("⚙️ Configuración del Sistema")
-    st.write("Aquí podrás definir tasas de interés, metas de recuperación y parámetros generales.")
+    st.download_button(
+        label="📥 Descargar Reporte Financiero Profesional",
+        data=output.getvalue(),
+        file_name="reporte_financiero_cobranza.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
