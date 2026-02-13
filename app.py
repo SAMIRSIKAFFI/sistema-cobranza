@@ -7,6 +7,7 @@ from openpyxl.utils import get_column_letter
 st.set_page_config(page_title="Sistema Profesional de Cobranza", layout="wide")
 
 st.title("⚖️ Sistema Profesional de Gestión de Cobranza")
+st.markdown("### 📊 Dashboard Ejecutivo de Recuperación")
 
 archivo_deuda = st.file_uploader("📂 Subir archivo CARTERA / DEUDA", type=["xlsx"])
 archivo_pagos = st.file_uploader("📂 Subir archivo PAGOS", type=["xlsx"])
@@ -19,6 +20,9 @@ def limpiar_columnas(df):
 
 if archivo_deuda and archivo_pagos:
 
+    # =============================
+    # CARGA Y LIMPIEZA
+    # =============================
     df_deuda = pd.read_excel(archivo_deuda)
     df_pagos = pd.read_excel(archivo_pagos)
 
@@ -31,6 +35,12 @@ if archivo_deuda and archivo_pagos:
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
     df_pagos["PERIODO"] = df_pagos["PERIODO"].astype(str)
 
+    df_deuda["DEUDA"] = pd.to_numeric(df_deuda["DEUDA"], errors="coerce").fillna(0)
+    df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
+
+    # =============================
+    # CRUCE DE INFORMACIÓN
+    # =============================
     pagos_resumen = df_pagos.groupby(
         ["ID_COBRANZA", "PERIODO"]
     )["IMPORTE"].sum().reset_index()
@@ -52,36 +62,76 @@ if archivo_deuda and archivo_pagos:
 
     pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
+    # =============================
+    # INDICADORES EJECUTIVOS
+    # =============================
+    total_deuda = resultado["DEUDA"].sum()
+    total_pagado = resultado["TOTAL_PAGADO"].sum()
+    total_pendiente = pendientes["DEUDA"].sum()
+
+    porcentaje_recuperacion = 0
+    if total_deuda > 0:
+        porcentaje_recuperacion = (total_pagado / total_deuda) * 100
+
+    st.success("Cruce realizado correctamente")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("💼 Total Cartera", f"Bs. {total_deuda:,.2f}")
+    col2.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
+    col3.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
+    col4.metric("📈 % Recuperación", f"{porcentaje_recuperacion:.2f}%")
+
+    # =============================
+    # SEMÁFORO FINANCIERO
+    # =============================
+    if porcentaje_recuperacion >= 80:
+        st.success("🟢 Nivel de recuperación saludable")
+    elif porcentaje_recuperacion >= 50:
+        st.warning("🟡 Nivel de recuperación medio")
+    else:
+        st.error("🔴 Nivel de recuperación bajo")
+
+    # =============================
+    # RESÚMENES
+    # =============================
     resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
     resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
     pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
 
-    total_pendiente = pendientes["DEUDA"].sum()
-    total_pagado = resultado["TOTAL_PAGADO"].sum()
-
-    st.success("Cruce realizado correctamente")
-
-    col1, col2 = st.columns(2)
-    col1.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
-    col2.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
-
-    st.subheader("📊 Resumen por TIPO")
-    st.dataframe(resumen_tipo)
+    st.subheader("📊 Deuda Pendiente por TIPO")
+    st.bar_chart(resumen_tipo.set_index("TIPO"))
 
     st.subheader("📆 Deuda Pendiente por PERIODO")
-    st.dataframe(resumen_periodo)
+    st.line_chart(resumen_periodo.set_index("PERIODO"))
 
     st.subheader("💵 Pagos por PERIODO")
-    st.dataframe(pagos_por_periodo)
+    st.line_chart(pagos_por_periodo.set_index("PERIODO"))
 
-    st.subheader("📊 Comparativo Pagado vs Pendiente")
+    # =============================
+    # RANKING MOROSOS
+    # =============================
+    top_morosos = pendientes.groupby("ID_COBRANZA")["DEUDA"].sum().reset_index()
+    top_morosos = top_morosos.sort_values(by="DEUDA", ascending=False).head(10)
+
+    st.subheader("🏆 Top 10 Mayores Deudores")
+    st.dataframe(top_morosos)
+
+    # =============================
+    # COMPARATIVO GLOBAL
+    # =============================
+    st.subheader("📊 Comparativo Global")
+
     comparativo = pd.DataFrame({
-        "Pagado": [total_pagado],
-        "Pendiente": [total_pendiente]
+        "Concepto": ["Pagado", "Pendiente"],
+        "Monto": [total_pagado, total_pendiente]
     })
-    st.bar_chart(comparativo)
 
-    # ---------- EXPORTACIÓN EXCEL PROFESIONAL ----------
+    st.bar_chart(comparativo.set_index("Concepto"))
+
+    # =============================
+    # EXPORTACIÓN PROFESIONAL EXCEL
+    # =============================
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -101,7 +151,6 @@ if archivo_deuda and archivo_pagos:
 
         for sheet in workbook.worksheets:
 
-            # Ajustar ancho columnas
             for col in sheet.columns:
                 max_length = 0
                 col_letter = get_column_letter(col[0].column)
@@ -112,11 +161,9 @@ if archivo_deuda and archivo_pagos:
 
                 sheet.column_dimensions[col_letter].width = max_length + 2
 
-            # Encabezados en negrita
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
 
-            # Formato monetario SOLO columnas correctas
             columnas_monetarias = ["DEUDA", "TOTAL_PAGADO", "IMPORTE"]
 
             for col in sheet.columns:
