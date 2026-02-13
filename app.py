@@ -48,7 +48,8 @@ def modulo_cruce():
             columnas_deuda = {"ID_COBRANZA", "PERIODO", "DEUDA", "TIPO"}
 
             if not columnas_deuda.issubset(df_deuda.columns):
-                st.error("El archivo CARTERA no tiene las columnas obligatorias.")
+                st.error(f"El archivo CARTERA debe contener columnas: {columnas_deuda}")
+                st.write("Columnas detectadas:", df_deuda.columns.tolist())
                 return
 
             df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
@@ -57,7 +58,7 @@ def modulo_cruce():
 
             st.session_state.df_deuda_base = df_deuda
 
-            st.success("✅ Cartera cargada correctamente y guardada en memoria.")
+            st.success("✅ Cartera cargada correctamente.")
             st.rerun()
 
         return
@@ -70,7 +71,7 @@ def modulo_cruce():
             st.rerun()
 
     archivo_pagos = st.file_uploader(
-        "💵 Subir archivo PAGOS (Puede actualizarse constantemente)",
+        "💵 Subir archivo PAGOS",
         type=["xlsx"]
     )
 
@@ -78,14 +79,13 @@ def modulo_cruce():
         return
 
     df_deuda = st.session_state.df_deuda_base.copy()
-    df_pagos = pd.read_excel(archivo_pagos)
-
-    df_pagos = limpiar_columnas(df_pagos)
+    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
 
     columnas_pagos = {"ID_COBRANZA", "PERIODO", "IMPORTE"}
 
     if not columnas_pagos.issubset(df_pagos.columns):
-        st.error("El archivo PAGOS no tiene las columnas obligatorias.")
+        st.error(f"El archivo PAGOS debe contener columnas: {columnas_pagos}")
+        st.write("Columnas detectadas:", df_pagos.columns.tolist())
         return
 
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
@@ -113,61 +113,8 @@ def modulo_cruce():
 
     pendientes = resultado[resultado["ESTADO"] == "PENDIENTE"]
 
-    total_deuda = resultado["DEUDA"].sum()
-    total_pagado = resultado["TOTAL_PAGADO"].sum()
-    total_pendiente = pendientes["DEUDA"].sum()
-
-    porcentaje_recuperacion = 0
-    if total_deuda > 0:
-        porcentaje_recuperacion = (total_pagado / total_deuda) * 100
-
     st.success("Cruce realizado correctamente")
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    col1.metric("💼 Total Cartera", f"Bs. {total_deuda:,.2f}")
-    col2.metric("💰 Total Pagado", f"Bs. {total_pagado:,.2f}")
-    col3.metric("⚠️ Total Pendiente", f"Bs. {total_pendiente:,.2f}")
-    col4.metric("📈 % Recuperación", f"{porcentaje_recuperacion:.2f}%")
-
-    resumen_tipo = pendientes.groupby("TIPO")["DEUDA"].sum().reset_index()
-    resumen_periodo = pendientes.groupby("PERIODO")["DEUDA"].sum().reset_index()
-    pagos_por_periodo = pagos_resumen.groupby("PERIODO")["TOTAL_PAGADO"].sum().reset_index()
-
-    st.subheader("📊 Deuda Pendiente por TIPO")
-    if not resumen_tipo.empty:
-        st.bar_chart(resumen_tipo.set_index("TIPO"))
-
-    st.subheader("📆 Deuda Pendiente por PERIODO")
-    if not resumen_periodo.empty:
-        st.line_chart(resumen_periodo.set_index("PERIODO"))
-
-    st.subheader("💵 Pagos por PERIODO")
-    if not pagos_por_periodo.empty:
-        st.line_chart(pagos_por_periodo.set_index("PERIODO"))
-
-    top_morosos = pendientes.groupby("ID_COBRANZA")["DEUDA"].sum().reset_index()
-    top_morosos = top_morosos.sort_values(by="DEUDA", ascending=False).head(10)
-
-    st.subheader("🏆 Top 10 Mayores Deudores")
-    st.dataframe(top_morosos)
-
-    output = io.BytesIO()
-
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-
-        resultado.to_excel(writer, sheet_name="RESULTADO_GENERAL", index=False)
-        resumen_tipo.to_excel(writer, sheet_name="RESUMEN_TIPO", index=False)
-        resumen_periodo.to_excel(writer, sheet_name="RESUMEN_PERIODO", index=False)
-        pagos_por_periodo.to_excel(writer, sheet_name="PAGOS_POR_PERIODO", index=False)
-        pendientes.to_excel(writer, sheet_name="PENDIENTES_TOTALES", index=False)
-
-    st.download_button(
-        label="📥 Descargar Reporte Financiero Profesional",
-        data=output.getvalue(),
-        file_name="reporte_financiero_cobranza.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.dataframe(resultado.head())
 
 
 # ==========================================================
@@ -191,8 +138,22 @@ def modulo_sms():
     df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
     df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
 
+    columnas_suscriptor = {"NUMERO", "NOMBRE", "CODIGO", "MONTO"}
+    columnas_pagos = {"ID_COBRANZA", "IMPORTE"}
+
+    if not columnas_suscriptor.issubset(df_suscriptor.columns):
+        st.error(f"La BASE POR SUSCRIPTOR debe contener: {columnas_suscriptor}")
+        st.write("Columnas detectadas:", df_suscriptor.columns.tolist())
+        return
+
+    if not columnas_pagos.issubset(df_pagos.columns):
+        st.error(f"La BASE DE PAGOS debe contener: {columnas_pagos}")
+        st.write("Columnas detectadas:", df_pagos.columns.tolist())
+        return
+
     df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
     df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
+
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
     df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
 
@@ -207,7 +168,6 @@ def modulo_sms():
     )
 
     df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
-
     df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
 
     st.subheader("Vista previa final")
