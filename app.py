@@ -208,13 +208,7 @@ def modulo_sms():
 
     df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
 
-    # Elimina completamente pagados
     df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
-
-    st.subheader("📅 Fecha editable")
-    fecha_sms = st.text_input("Fecha formato largo (Ej: sábado, 14 de febrero de 2026)")
-    if fecha_sms:
-        df_final["FECHA"] = fecha_sms
 
     st.subheader("Vista previa final")
     st.dataframe(df_final)
