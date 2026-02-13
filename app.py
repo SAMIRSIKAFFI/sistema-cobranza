@@ -48,8 +48,7 @@ def modulo_cruce():
             columnas_deuda = {"ID_COBRANZA", "PERIODO", "DEUDA", "TIPO"}
 
             if not columnas_deuda.issubset(df_deuda.columns):
-                st.error(f"El archivo CARTERA debe contener columnas: {columnas_deuda}")
-                st.write("Columnas detectadas:", df_deuda.columns.tolist())
+                st.error("El archivo CARTERA no tiene las columnas obligatorias.")
                 return
 
             df_deuda["ID_COBRANZA"] = df_deuda["ID_COBRANZA"].astype(str)
@@ -58,7 +57,7 @@ def modulo_cruce():
 
             st.session_state.df_deuda_base = df_deuda
 
-            st.success("✅ Cartera cargada correctamente.")
+            st.success("✅ Cartera cargada correctamente y guardada en memoria.")
             st.rerun()
 
         return
@@ -71,7 +70,7 @@ def modulo_cruce():
             st.rerun()
 
     archivo_pagos = st.file_uploader(
-        "💵 Subir archivo PAGOS",
+        "💵 Subir archivo PAGOS (Puede actualizarse constantemente)",
         type=["xlsx"]
     )
 
@@ -79,13 +78,14 @@ def modulo_cruce():
         return
 
     df_deuda = st.session_state.df_deuda_base.copy()
-    df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
+    df_pagos = pd.read_excel(archivo_pagos)
+
+    df_pagos = limpiar_columnas(df_pagos)
 
     columnas_pagos = {"ID_COBRANZA", "PERIODO", "IMPORTE"}
 
     if not columnas_pagos.issubset(df_pagos.columns):
-        st.error(f"El archivo PAGOS debe contener columnas: {columnas_pagos}")
-        st.write("Columnas detectadas:", df_pagos.columns.tolist())
+        st.error("El archivo PAGOS no tiene las columnas obligatorias.")
         return
 
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
@@ -138,22 +138,8 @@ def modulo_sms():
     df_suscriptor = limpiar_columnas(pd.read_excel(archivo_suscriptor))
     df_pagos = limpiar_columnas(pd.read_excel(archivo_pagos))
 
-    columnas_suscriptor = {"NUMERO", "NOMBRE", "CODIGO", "MONTO"}
-    columnas_pagos = {"ID_COBRANZA", "IMPORTE"}
-
-    if not columnas_suscriptor.issubset(df_suscriptor.columns):
-        st.error(f"La BASE POR SUSCRIPTOR debe contener: {columnas_suscriptor}")
-        st.write("Columnas detectadas:", df_suscriptor.columns.tolist())
-        return
-
-    if not columnas_pagos.issubset(df_pagos.columns):
-        st.error(f"La BASE DE PAGOS debe contener: {columnas_pagos}")
-        st.write("Columnas detectadas:", df_pagos.columns.tolist())
-        return
-
     df_suscriptor["CODIGO"] = df_suscriptor["CODIGO"].astype(str)
     df_suscriptor["MONTO"] = pd.to_numeric(df_suscriptor["MONTO"], errors="coerce").fillna(0)
-
     df_pagos["ID_COBRANZA"] = df_pagos["ID_COBRANZA"].astype(str)
     df_pagos["IMPORTE"] = pd.to_numeric(df_pagos["IMPORTE"], errors="coerce").fillna(0)
 
@@ -168,26 +154,32 @@ def modulo_sms():
     )
 
     df_final["TOTAL_PAGADO"] = df_final["TOTAL_PAGADO"].fillna(0)
+
     df_final = df_final[df_final["TOTAL_PAGADO"] < df_final["MONTO"]]
 
+    # 🔹 SOLO COLUMNAS NECESARIAS PARA EXPORTAR
+    columnas_exportar = ["N", "NUMERO", "NOMBRE", "FECHA", "CODIGO", "MONTO"]
+
+    df_export = df_final[columnas_exportar].copy()
+
     st.subheader("Vista previa final")
-    st.dataframe(df_final)
+    st.dataframe(df_export)
 
     partes = st.number_input("Cantidad de archivos CSV", min_value=1, value=1)
     prefijo = st.text_input("Prefijo archivos", value="SMS")
 
     if st.button("Generar CSV"):
 
-        if df_final.empty:
+        if df_export.empty:
             st.warning("No existen registros.")
             return
 
-        tamaño = len(df_final) // partes + 1
+        tamaño = len(df_export) // partes + 1
 
         for i in range(partes):
             inicio = i * tamaño
             fin = inicio + tamaño
-            df_parte = df_final.iloc[inicio:fin]
+            df_parte = df_export.iloc[inicio:fin]
 
             if df_parte.empty:
                 continue
