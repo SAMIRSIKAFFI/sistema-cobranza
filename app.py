@@ -182,7 +182,12 @@ def modulo_sms():
             if df_parte.empty:
                 continue
 
-            csv = df_parte.to_csv(index=False, encoding="utf-8-sig")
+            csv = df_parte.to_csv(
+    index=False,
+    sep=";",                 # ← separador correcto para Excel Bolivia
+    encoding="utf-8-sig"     # ← evita sÃ¡bado
+)
+
 
             st.download_button(
                 label=f"Descargar {prefijo}_{i+1}.csv",
@@ -205,3 +210,4 @@ elif menu == "📲 GENERADOR DE SMS":
 elif menu == "🚧 Módulo Histórico (En Desarrollo)":
     st.title("📈 Histórico")
     st.info("Aquí construiremos el dashboard acumulado mensual.")
+
