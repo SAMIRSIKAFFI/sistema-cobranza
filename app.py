@@ -182,12 +182,7 @@ def modulo_sms():
             if df_parte.empty:
                 continue
 
-            csv = df_parte.to_csv(
-    index=False,
-    sep=";",                 # ← separador correcto para Excel Bolivia
-    encoding="utf-8-sig"     # ← evita sÃ¡bado
-)
-
+            csv = df_parte.to_csv(index=False, encoding="utf-8-sig")
 
             st.download_button(
                 label=f"Descargar {prefijo}_{i+1}.csv",
